@@ -209,9 +209,9 @@ kube-proxy.pem
 
 ### The Kubernetes API Server Certificate
 
-The `kubernetes-the-hard-way` static IP address will be included in the list of subject alternative names for the Kubernetes API Server certificate. This will ensure the certificate can be validated by remote clients.
+The public IP of the `kubernetes-api` load balancer will be included in the list of subject alternative names for the Kubernetes API Server certificate. This will ensure the certificate can be validated by remote clients.
 
-Retrieve the `kubernetes-the-hard-way` static IP address:
+Retrieve the public IP address of the `kubernetes-api` load balancer:
 
 ```
 lbname="kubernetes-api"

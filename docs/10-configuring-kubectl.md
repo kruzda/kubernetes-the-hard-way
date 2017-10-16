@@ -73,4 +73,4 @@ worker-1   Ready     <none>    2m        v1.8.0
 worker-2   Ready     <none>    2m        v1.8.0
 ```
 
-Next: [Provisioning Pod Network Routes](11-pod-network-routes.md)
+Next: [Deploying the DNS Cluster Add-on](11-dns-addon.md)

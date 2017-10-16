@@ -12,9 +12,12 @@ In this section you will generate kubeconfig files for the `kubelet` and `kube-p
 
 Each kubeconfig requires a Kubernetes API Server to connect to. To support high availability the IP address assigned to the external load balancer fronting the Kubernetes API Servers will be used.
 
-Retrieve the `kubernetes-the-hard-way` static IP address:
+Retrieve the public IP address of the `kubernetes-api` load balancer:
 
 ```
+lbname="kubernetes-api"
+ipv="4"
+iptype="PUBLIC"
 KUBERNETES_PUBLIC_ADDRESS=$(api_call $lb_ep/loadbalancers | jq -r '.loadBalancers[] | select(.name == "'$lbname'") | .virtualIps[] | select(.ipVersion == "IPV'$ipv'" and .type == "'$iptype'") | .address')
 ```
 

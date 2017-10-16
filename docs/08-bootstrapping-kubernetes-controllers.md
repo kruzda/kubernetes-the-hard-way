@@ -1,16 +1,24 @@
 # Bootstrapping the Kubernetes Control Plane
 
-In this lab you will bootstrap the Kubernetes control plane across three compute instances and configure it for high availability. You will also create an external load balancer that exposes the Kubernetes API Servers to remote clients. The following components will be installed on each node: Kubernetes API Server, Scheduler, and Controller Manager.
+In this lab you will bootstrap the Kubernetes control plane across three compute instances and configure it for high availability. You will also add the controller nodes to the Cloud Load Balancer which exposes the Kubernetes API Servers to remote clients. The following components will be installed on each node: Kubernetes API Server, Scheduler, and Controller Manager.
 
 ## Prerequisites
 
-The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `gcloud` command. Example:
+The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. The following command can be used to login to the server specified in the `servername` environment variable:
 
 ```
 servername="controller-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
 ```
 
 ## Provision the Kubernetes Control Plane
+
+### Add static IPs for the worker nodes:
+
+```
+for i in 0 1 2; do
+  echo "10.240.0.2$i     worker-$i" >>/etc/hosts
+done
+```
 
 ### Download and Install the Kubernetes Controller Binaries
 
@@ -48,13 +56,12 @@ The instance internal IP address will be used advertise the API Server to member
 
 ```
 INTERNAL_IP=$(for n in $(xenstore-list vm-data/networking); do xenstore-read vm-data/networking/$n; done | jq -r '. | select(.label == "kubernetes-the-hard-way") | .ips[] | .ip')
-echo $INTERNAL_IP
 ```
 
 Create the `kube-apiserver.service` systemd unit file:
 
 ```
-cat > kube-apiserver.service <<EOF
+cat > /etc/systemd/system/kube-apiserver.service <<EOF
 [Unit]
 Description=Kubernetes API Server
 Documentation=https://github.com/GoogleCloudPlatform/kubernetes
@@ -105,7 +112,7 @@ EOF
 Create the `kube-controller-manager.service` systemd unit file:
 
 ```
-cat > kube-controller-manager.service <<EOF
+cat > /etc/systemd/system/kube-controller-manager.service <<EOF
 [Unit]
 Description=Kubernetes Controller Manager
 Documentation=https://github.com/GoogleCloudPlatform/kubernetes
@@ -136,7 +143,7 @@ EOF
 Create the `kube-scheduler.service` systemd unit file:
 
 ```
-cat > kube-scheduler.service <<EOF
+cat > /etc/systemd/system/kube-scheduler.service <<EOF
 [Unit]
 Description=Kubernetes Scheduler
 Documentation=https://github.com/GoogleCloudPlatform/kubernetes
@@ -157,10 +164,6 @@ EOF
 ### Start the Controller Services
 
 ```
-mv -v kube-apiserver.service kube-scheduler.service kube-controller-manager.service /etc/systemd/system/
-```
-
-```
 systemctl daemon-reload
 ```
 
@@ -169,6 +172,7 @@ systemctl enable --now kube-apiserver kube-controller-manager kube-scheduler
 ```
 
 > Allow up to 10 seconds for the Kubernetes API Server to fully initialize.
+
 
 ### Verification
 
@@ -260,7 +264,7 @@ for n in 0 1 2; do
   server_ip=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == 4) | .addr')
   api_call $lb_ep/loadbalancers/$lb_id/nodes -X POST -d '{"nodes": [{"address": "'$server_ip'", "condition": "ENABLED", "port": "'$lbport'"}]}' | jq
   while [ $(api_call $lb_ep/loadbalancers/$lb_id | jq -r '.loadBalancer.status') != "ACTIVE" ] ; do
-	echo "waiting for CLB to beceme ACTIVE"
+	echo "waiting for CLB to become ACTIVE"
 	sleep 3
   done
 done

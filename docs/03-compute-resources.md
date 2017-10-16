@@ -31,6 +31,24 @@ subnet_id=$(api_call $cn_ep/subnets -X POST -d '{"subnet": {"name": "'$subnetnam
 
 > The `10.240.0.0/24` IP address range can host up to 254 compute instances.
 
+Create [Cloud Network Ports](https://developer.rackspace.com/docs/cloud-networks/v2/getting-started/concepts/#port-concepts) for the controller nodes:
+
+```
+for i in 0 1 2; do
+  api_call $cn_ep/ports -X POST -d '{"port": {"network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.1'$i'"}] }}' | jq
+  sleep 2
+done
+```
+
+Create the network ports for the worker nodes:
+
+```
+for i in 0 1 2; do
+  api_call $cn_ep/ports -X POST -d '{"port": {"network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.2'$i'"}]}}' | jq
+  sleep 2
+done
+```
+
 ### Kubernetes Public IP Address
 
 > A [Cloud Load Balancer](https://developer.rackspace.com/docs/cloud-load-balancers/v1/) will be used to expose the Kubernetes API Servers to remote clients.
@@ -40,7 +58,8 @@ Allocate the load balancer fronting the Kubernetes API Servers:
 ```
 lbport="6443"
 lbname="kubernetes-api"
-lb_id=(api_call $lb_ep/loadbalancers -X POST -d '{"loadBalancer": {"name": "'$lbname'", "port": '$lbport', "protocol": "HTTPS", "virtualIps": [{"type": "PUBLIC"}], "healthMonitor": {"type": "HTTPS", "delay": 10, "timeout": 5, "attemptsBeforeDeactivation": 2, "path": "/version", "statusRegex": "^200$"}}}' | jq)
+lb_details=$(api_call $lb_ep/loadbalancers -X POST -d '{"loadBalancer": {"name": "'$lbname'", "port": '$lbport', "protocol": "HTTPS", "virtualIps": [{"type": "PUBLIC"}], "healthMonitor": {"type": "HTTPS", "delay": 10, "timeout": 5, "attemptsBeforeDeactivation": 2, "path": "/version", "statusRegex": "^200$"}}}')
+lb_id=$(echo $lb_details | jq -r '.loadBalancer.id')
 ```
 
 ## Compute Instances
@@ -68,19 +87,9 @@ echo '{"keypair": {"name": "'$keypair_name'", "public_key": "'$(cat $public_key_
 api_call $cs_ep/os-keypairs -X POST -d @/tmp/pubkey-to-upload | jq
 ```
 
-Create network ports for the controller nodes:
-
-```
-for i in 0 1 2; do
-  api_call $cn_ep/ports -X POST -d '{"port": {"network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.1'$i'"}] }}' | jq
-  sleep 3
-done
-```
-
 Create three compute instances which will host the Kubernetes control plane:
 
 ```
-keypair_name="kubernetes-the-hard-way"
 controller_flavor="general1-2"
 compute_image="0401bbaf-ea2c-4863-b6fc-001b48f3cb3c"
 pubnetuuid="00000000-0000-0000-0000-000000000000"
@@ -88,7 +97,7 @@ sernetuuid="11111111-1111-1111-1111-111111111111"
 for i in 0 1 2; do
   servername="controller-$i"
   port_id=$(api_call $cn_ep/ports | jq -r '.ports[] | select(.fixed_ips[].ip_address == "10.240.0.1'$i'") | .id')
-  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$controller_flavor'", "key_name": "'$keypair_name'", "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}]}}' | jq
+  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$controller_flavor'", "key_name": "'$keypair_name'", "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}], "user-data": "apt install jq -y"}}' | jq
 done
 ```
 
@@ -98,14 +107,6 @@ Each worker instance requires a pod subnet allocation from the Kubernetes cluste
 
 > The Kubernetes cluster CIDR range is defined by the Controller Manager's `--cluster-cidr` flag. In this tutorial the cluster CIDR range will be set to `10.200.0.0/16`, which supports 254 subnets.
 
-Create network ports for the worker nodes:
-
-```
-for i in 0 1 2; do
-  api_call $cn_ep/ports -X POST -d '{"port": {"network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.2'$i'"}]}}' | jq
-  sleep 3
-done
-```
 
 Create three compute instances which will host the Kubernetes worker nodes:
 
@@ -114,7 +115,7 @@ worker_flavor="general1-2"
 for i in 0 1 2; do
   servername="worker-$i"
   port_id=$(api_call $cn_ep/ports | jq -r '.ports[] | select(.fixed_ips[].ip_address == "10.240.0.2'$i'") | .id')
-  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$worker_flavor'", "key_name": "'$keypair_name'", "metadata": {"pod-cidr": "10.200.4.2'$i'/24"}, "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}]}}' | jq
+  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$worker_flavor'", "key_name": "'$keypair_name'", "metadata": {"pod-cidr": "10.200.'$i'.0/24"}, "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}]}}' | jq
 done
 ```
 
