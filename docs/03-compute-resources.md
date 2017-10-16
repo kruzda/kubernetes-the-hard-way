@@ -97,7 +97,7 @@ sernetuuid="11111111-1111-1111-1111-111111111111"
 for i in 0 1 2; do
   servername="controller-$i"
   port_id=$(api_call $cn_ep/ports | jq -r '.ports[] | select(.fixed_ips[].ip_address == "10.240.0.1'$i'") | .id')
-  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$controller_flavor'", "key_name": "'$keypair_name'", "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}], "user-data": "apt install jq -y"}}' | jq
+  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$controller_flavor'", "key_name": "'$keypair_name'", "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}]}}' | jq
 done
 ```
 
