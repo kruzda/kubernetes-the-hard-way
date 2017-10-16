@@ -15,9 +15,7 @@ Each kubeconfig requires a Kubernetes API Server to connect to. To support high 
 Retrieve the `kubernetes-the-hard-way` static IP address:
 
 ```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+KUBERNETES_PUBLIC_ADDRESS=$(api_call $lb_ep/loadbalancers | jq -r '.loadBalancers[] | select(.name == "'$lbname'") | .virtualIps[] | select(.ipVersion == "IPV'$ipv'" and .type == "'$iptype'") | .address')
 ```
 
 ### The kubelet Kubernetes Configuration File
@@ -93,8 +91,11 @@ kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 Copy the appropriate `kubelet` and `kube-proxy` kubeconfig files to each worker instance:
 
 ```
-for instance in worker-0 worker-1 worker-2; do
-  gcloud compute scp ${instance}.kubeconfig kube-proxy.kubeconfig ${instance}:~/
+for servername in worker-0 worker-1 worker-2; do
+  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id')
+  target_ip=$(api_call $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == 4) | .addr')
+  source="${servername}.kubeconfig kube-proxy.kubeconfig"
+  scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
 ```
 

@@ -7,7 +7,7 @@ In this lab you will bootstrap three Kubernetes worker nodes. The following comp
 The commands in this lab must be run on each worker instance: `worker-0`, `worker-1`, and `worker-2`. Login to each worker instance using the `gcloud` command. Example:
 
 ```
-gcloud compute ssh worker-0
+servername="worker-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
 ```
 
 ## Provisioning a Kubernetes Worker Node
@@ -15,7 +15,7 @@ gcloud compute ssh worker-0
 Install the OS dependencies:
 
 ```
-sudo apt-get -y install socat
+apt-get -y install socat
 ```
 
 > The socat binary enables support for the `kubectl port-forward` command.
@@ -34,7 +34,7 @@ wget -q --show-progress --https-only --timestamping \
 Create the installation directories:
 
 ```
-sudo mkdir -p \
+mkdir -pv \
   /etc/cni/net.d \
   /opt/cni/bin \
   /var/lib/kubelet \
@@ -46,19 +46,19 @@ sudo mkdir -p \
 Install the worker binaries:
 
 ```
-sudo tar -xvf cni-plugins-amd64-v0.6.0.tgz -C /opt/cni/bin/
+tar -xvf cni-plugins-amd64-v0.6.0.tgz -C /opt/cni/bin/
 ```
 
 ```
-sudo tar -xvf cri-containerd-1.0.0-alpha.0.tar.gz -C /
+tar -xvf cri-containerd-1.0.0-alpha.0.tar.gz -C /
 ```
 
 ```
-chmod +x kubectl kube-proxy kubelet
+chmod -v +x kubectl kube-proxy kubelet
 ```
 
 ```
-sudo mv kubectl kube-proxy kubelet /usr/local/bin/
+mv -v kubectl kube-proxy kubelet /usr/local/bin/
 ```
 
 ### Configure CNI Networking
@@ -66,14 +66,21 @@ sudo mv kubectl kube-proxy kubelet /usr/local/bin/
 Retrieve the Pod CIDR range for the current compute instance:
 
 ```
-POD_CIDR=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/attributes/pod-cidr)
+POD_CIDR=$(xenstore-read vm-data/user-metadata/pod-cidr | tr -d '"')
+```
+
+Disable the route that would conflict with the one being set up in the next steps by CNI:
+
+```
+i=$(hostname | cut -d'-' -f2)
+ip r del 10.200.$i.0/24 via 10.240.0.2$i dev eth2
+sed -i 's/\(.*10\.200\.'$i'\.0\)/#\1/g' /etc/network/interfaces
 ```
 
 Create the `bridge` network configuration file:
 
 ```
-cat > 10-bridge.conf <<EOF
+cat > /etc/cni/net.d/10-bridge.conf <<EOF
 {
     "cniVersion": "0.3.1",
     "name": "bridge",
@@ -95,7 +102,7 @@ EOF
 Create the `loopback` network configuration file:
 
 ```
-cat > 99-loopback.conf <<EOF
+cat > /etc/cni/net.d/99-loopback.conf <<EOF
 {
     "cniVersion": "0.3.1",
     "type": "loopback"
@@ -103,30 +110,24 @@ cat > 99-loopback.conf <<EOF
 EOF
 ```
 
-Move the network configuration files to the CNI configuration directory:
-
-```
-sudo mv 10-bridge.conf 99-loopback.conf /etc/cni/net.d/
-```
-
 ### Configure the Kubelet
 
 ```
-sudo mv ${HOSTNAME}-key.pem ${HOSTNAME}.pem /var/lib/kubelet/
+mv -v ${HOSTNAME}-key.pem ${HOSTNAME}.pem /var/lib/kubelet/
 ```
 
 ```
-sudo mv ${HOSTNAME}.kubeconfig /var/lib/kubelet/kubeconfig
+mv -v ${HOSTNAME}.kubeconfig /var/lib/kubelet/kubeconfig
 ```
 
 ```
-sudo mv ca.pem /var/lib/kubernetes/
+mv -v ca.pem /var/lib/kubernetes/
 ```
 
 Create the `kubelet.service` systemd unit file:
 
 ```
-cat > kubelet.service <<EOF
+cat > /etc/systemd/system/kubelet.service <<EOF
 [Unit]
 Description=Kubernetes Kubelet
 Documentation=https://github.com/GoogleCloudPlatform/kubernetes
@@ -164,13 +165,13 @@ EOF
 ### Configure the Kubernetes Proxy
 
 ```
-sudo mv kube-proxy.kubeconfig /var/lib/kube-proxy/kubeconfig
+mv -v kube-proxy.kubeconfig /var/lib/kube-proxy/kubeconfig
 ```
 
 Create the `kube-proxy.service` systemd unit file:
 
 ```
-cat > kube-proxy.service <<EOF
+cat > /etc/systemd/system/kube-proxy.service <<EOF
 [Unit]
 Description=Kubernetes Kube Proxy
 Documentation=https://github.com/GoogleCloudPlatform/kubernetes
@@ -192,19 +193,11 @@ EOF
 ### Start the Worker Services
 
 ```
-sudo mv kubelet.service kube-proxy.service /etc/systemd/system/
+systemctl daemon-reload
 ```
 
 ```
-sudo systemctl daemon-reload
-```
-
-```
-sudo systemctl enable containerd cri-containerd kubelet kube-proxy
-```
-
-```
-sudo systemctl start containerd cri-containerd kubelet kube-proxy
+systemctl enable --now containerd cri-containerd kubelet kube-proxy
 ```
 
 > Remember to run the above commands on each worker node: `worker-0`, `worker-1`, and `worker-2`.
@@ -214,7 +207,7 @@ sudo systemctl start containerd cri-containerd kubelet kube-proxy
 Login to one of the controller nodes:
 
 ```
-gcloud compute ssh controller-0
+servername="controller-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
 ```
 
 List the registered Kubernetes nodes:

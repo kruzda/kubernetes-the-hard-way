@@ -7,7 +7,7 @@ In this lab you will bootstrap the Kubernetes control plane across three compute
 The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `gcloud` command. Example:
 
 ```
-gcloud compute ssh controller-0
+servername="controller-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
 ```
 
 ## Provision the Kubernetes Control Plane
@@ -27,28 +27,28 @@ wget -q --show-progress --https-only --timestamping \
 Install the Kubernetes binaries:
 
 ```
-chmod +x kube-apiserver kube-controller-manager kube-scheduler kubectl
+chmod -v +x kube-apiserver kube-controller-manager kube-scheduler kubectl
 ```
 
 ```
-sudo mv kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin/
+mv -v kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin/
 ```
 
 ### Configure the Kubernetes API Server
 
 ```
-sudo mkdir -p /var/lib/kubernetes/
+mkdir -pv /var/lib/kubernetes/
 ```
 
 ```
-sudo mv ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem encryption-config.yaml /var/lib/kubernetes/
+mv -v ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem encryption-config.yaml /var/lib/kubernetes/
 ```
 
 The instance internal IP address will be used advertise the API Server to members of the cluster. Retrieve the internal IP address for the current compute instance:
 
 ```
-INTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+INTERNAL_IP=$(for n in $(xenstore-list vm-data/networking); do xenstore-read vm-data/networking/$n; done | jq -r '. | select(.label == "kubernetes-the-hard-way") | .ips[] | .ip')
+echo $INTERNAL_IP
 ```
 
 Create the `kube-apiserver.service` systemd unit file:
@@ -157,19 +157,15 @@ EOF
 ### Start the Controller Services
 
 ```
-sudo mv kube-apiserver.service kube-scheduler.service kube-controller-manager.service /etc/systemd/system/
+mv -v kube-apiserver.service kube-scheduler.service kube-controller-manager.service /etc/systemd/system/
 ```
 
 ```
-sudo systemctl daemon-reload
+systemctl daemon-reload
 ```
 
 ```
-sudo systemctl enable kube-apiserver kube-controller-manager kube-scheduler
-```
-
-```
-sudo systemctl start kube-apiserver kube-controller-manager kube-scheduler
+systemctl enable --now kube-apiserver kube-controller-manager kube-scheduler
 ```
 
 > Allow up to 10 seconds for the Kubernetes API Server to fully initialize.
@@ -198,7 +194,7 @@ In this section you will configure RBAC permissions to allow the Kubernetes API 
 > This tutorial sets the Kubelet `--authorization-mode` flag to `Webhook`. Webhook mode uses the [SubjectAccessReview](https://kubernetes.io/docs/admin/authorization/#checking-api-access) API to determine authorization.
 
 ```
-gcloud compute ssh controller-0
+servername="controller-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
 ```
 
 Create the `system:kube-apiserver-to-kubelet` [ClusterRole](https://kubernetes.io/docs/admin/authorization/rbac/#role-and-clusterrole) with permissions to access the Kubelet API and perform most common tasks associated with managing pods:
@@ -251,46 +247,67 @@ EOF
 
 ## The Kubernetes Frontend Load Balancer
 
-In this section you will provision an external load balancer to front the Kubernetes API Servers. The `kubernetes-the-hard-way` static IP address will be attached to the resulting load balancer.
+In this section you attach the Kubernetes API Servers to the Cloud Load Balancer.
 
 > The compute instances created in this tutorial will not have permission to complete this section. Run the following commands from the same machine used to create the compute instances.
 
-Create the external load balancer network resources:
 
 ```
-gcloud compute target-pools create kubernetes-target-pool
-```
-
-```
-gcloud compute target-pools add-instances kubernetes-target-pool \
-  --instances controller-0,controller-1,controller-2
-```
-
-```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(name)')
-```
-
-```
-gcloud compute forwarding-rules create kubernetes-forwarding-rule \
-  --address ${KUBERNETES_PUBLIC_ADDRESS} \
-  --ports 6443 \
-  --region $(gcloud config get-value compute/region) \
-  --target-pool kubernetes-target-pool
+netname="private"
+for n in 0 1 2; do
+  servername="controller-$n"
+  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id ')
+  server_ip=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == 4) | .addr')
+  api_call $lb_ep/loadbalancers/$lb_id/nodes -X POST -d '{"nodes": [{"address": "'$server_ip'", "condition": "ENABLED", "port": "'$lbport'"}]}' | jq
+  while [ $(api_call $lb_ep/loadbalancers/$lb_id | jq -r '.loadBalancer.status') != "ACTIVE" ] ; do
+	echo "waiting for CLB to beceme ACTIVE"
+	sleep 3
+  done
+done
 ```
 
 ### Verification
 
-Retrieve the `kubernetes-the-hard-way` static IP address:
+Check for node status:
 
 ```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+api_call $lb_ep/loadbalancers/$lb_id/nodes | jq
 ```
 
-Make a HTTP request for the Kubernetes version info:
+> output
+
+```
+{
+  "nodes": [
+    {
+      "address": "10.181.65.181",
+      "id": 799325,
+      "type": "PRIMARY",
+      "port": 6443,
+      "status": "ONLINE",
+      "condition": "ENABLED"
+    },
+    {
+      "address": "10.181.67.209",
+      "id": 799327,
+      "type": "PRIMARY",
+      "port": 6443,
+      "status": "ONLINE",
+      "condition": "ENABLED"
+    },
+    {
+      "address": "10.181.67.232",
+      "id": 799329,
+      "type": "PRIMARY",
+      "port": 6443,
+      "status": "ONLINE",
+      "condition": "ENABLED"
+    }
+  ]
+}
+```
+
+Make an HTTP request for the Kubernetes version info:
 
 ```
 curl --cacert ca.pem https://${KUBERNETES_PUBLIC_ADDRESS}:6443/version

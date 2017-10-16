@@ -121,26 +121,27 @@ cat > ${instance}-csr.json <<EOF
 {
   "CN": "system:node:${instance}",
   "key": {
-    "algo": "rsa",
-    "size": 2048
+	"algo": "rsa",
+	"size": 2048
   },
   "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "system:nodes",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
+	{
+	  "C": "US",
+	  "L": "Portland",
+	  "O": "system:nodes",
+	  "OU": "Kubernetes The Hard Way",
+	  "ST": "Oregon"
+	}
   ]
 }
 EOF
 
-EXTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].accessConfigs[0].natIP)')
+netname="public"
+server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$instance'") | .id ')
+EXTERNAL_IP=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == 4) | .addr')
 
-INTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].networkIP)')
+netname="kubernetes-the-hard-way"
+INTERNAL_IP=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == 4) | .addr')
 
 cfssl gencert \
   -ca=ca.pem \
@@ -213,9 +214,10 @@ The `kubernetes-the-hard-way` static IP address will be included in the list of 
 Retrieve the `kubernetes-the-hard-way` static IP address:
 
 ```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+lbname="kubernetes-api"
+ipv="4"
+iptype="PUBLIC"
+KUBERNETES_PUBLIC_ADDRESS=$(api_call $lb_ep/loadbalancers | jq -r '.loadBalancers[] | select(.name == "'$lbname'") | .virtualIps[] | select(.ipVersion == "IPV'$ipv'" and .type == "'$iptype'") | .address')
 ```
 
 Create the Kubernetes API Server certificate signing request:
@@ -265,16 +267,27 @@ kubernetes.pem
 Copy the appropriate certificates and private keys to each worker instance:
 
 ```
-for instance in worker-0 worker-1 worker-2; do
-  gcloud compute scp ca.pem ${instance}-key.pem ${instance}.pem ${instance}:~/
+user="root"
+target_path="~/"
+netname="public"
+for servername in worker-0 worker-1 worker-2; do
+  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id')
+  target_ip=$(api_call $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == 4) | .addr')
+  source="ca.pem ${servername}-key.pem ${servername}.pem"
+  ssh-keygen -R $target_ip
+  scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
 ```
 
 Copy the appropriate certificates and private keys to each controller instance:
 
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem ${instance}:~/
+source="ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem"
+for servername in controller-0 controller-1 controller-2; do
+  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id')
+  target_ip=$(api_call $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == 4) | .addr')
+  ssh-keygen -R $target_ip
+  scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
 ```
 

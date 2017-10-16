@@ -1,47 +1,37 @@
 # Prerequisites
 
-## Google Cloud Platform
+## A Rackspace Public Cloud account
 
-This tutorial leverages the [Google Cloud Platform](https://cloud.google.com/) to streamline provisioning of the compute infrastructure required to bootstrap a Kubernetes cluster from the ground up. [Sign up](https://cloud.google.com/free/) for $300 in free credits.
+This tutorial leverages the [Rackspace Public Cloud](https://www.rackspace.com/openstack/public) to streamline provisioning of the compute infrastructure required to bootstrap a Kubernetes cluster from the ground up. Sign up: [for a UK account](https://cart.rackspace.com/en-gb/cloud) or a [global one](https://cart.rackspace.com/cloud).
 
-[Estimated cost](https://cloud.google.com/products/calculator/#id=78df6ced-9c50-48f8-a670-bc5003f2ddaa) to run this tutorial: $0.22 per hour ($5.39 per day).
+## A Linux, Mac or Cygwin terminal
 
-> The compute resources required for this tutorial exceed the Google Cloud Platform free tier.
+## Curl
+https://curl.haxx.se/
 
-## Google Cloud Platform SDK
+## jq
+https://stedolan.github.io/jq/
 
-### Install the Google Cloud SDK
+## Authentication to the Rackspace Cloud API
 
-Follow the Google Cloud SDK [documentation](https://cloud.google.com/sdk/) to install and configure the `gcloud` command line utility.
-
-Verify the Google Cloud SDK version is 173.0.0 or higher:
-
-```
-gcloud version
-```
-
-### Set a Default Compute Region and Zone
-
-This tutorial assumes a default compute region and zone have been configured.
-
-If you are using the `gcloud` command-line tool for the first time `init` is the easiest way to do this:
+Set the following environment variables as per your Rackspace Cloud account username, its API-key and the [region](https://support.rackspace.com/how-to/about-regions) you wish to the cluster in.
 
 ```
-gcloud init
+RS_USER=""
+RS_APIKEY=""
+RS_REGION=""
 ```
 
-Otherwise set a default compute region:
+Once that is done you can run the one-liner below to receive an authentication token and a service catalog from wich the endpoints used in this guide are saved as variables.
 
 ```
-gcloud config set compute/region us-west1
+catalog=$(curl -s https://identity.api.rackspacecloud.com/v2.0/tokens -d '{"auth":{"RAX-KSKEY:apiKeyCredentials":{"username": "'$RS_USER'", "apiKey": "'$RS_APIKEY'"}}}' -X POST -H "Content-type: application/json") && token=$(echo $catalog | jq -r .access.token.id) && cs_ep=$(echo $catalog | jq -r '.access.serviceCatalog[] | select(.type == "compute") | .endpoints[] | select(.region == "'$RS_REGION'") | .publicURL') && cn_ep=$(echo $catalog | jq -r '.access.serviceCatalog[] | select(.type == "network") | .endpoints[] | select(.region == "'$RS_REGION'") | .publicURL') && cf_ep=$(echo $catalog | jq -r '.access.serviceCatalog[] | select(.type == "object-store") | .endpoints[] | select(.region == "'$RS_REGION'") | .publicURL') && cfcdn_ep=$(echo $catalog | jq -r '.access.serviceCatalog[] | select(.type == "rax:object-cdn") | .endpoints[] | select(.region == "'$RS_REGION'") | .publicURL') && dns_ep=$(echo $catalog | jq -r '.access.serviceCatalog[] | select(.type == "rax:dns") | .endpoints[].publicURL') && lb_ep=$(echo $catalog | jq -r '.access.serviceCatalog[] | select(.type == "rax:load-balancer") | .endpoints[] | select(.region == "'$RS_REGION'") | .publicURL') && cm_ep=$(echo $catalog | jq -r '.access.serviceCatalog[] | select(.type == "rax:monitor") | .endpoints[].publicURL')
 ```
 
-Set a default compute zone:
+Set the following alias. This helps reducing the lenght of commands used in this guide making them easier to read.
 
 ```
-gcloud config set compute/zone us-west1-c
+alias api_call='curl -s -H "X-Auth-Token: '$token'" -H "Content-Type: application/json"'
 ```
-
-> Use the `gcloud compute zones list` command to view additional regions and zones.
 
 Next: [Installing the Client Tools](02-client-tools.md)

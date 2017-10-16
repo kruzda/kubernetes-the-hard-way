@@ -35,8 +35,11 @@ EOF
 Copy the `encryption-config.yaml` encryption config file to each controller instance:
 
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp encryption-config.yaml ${instance}:~/
+source="encryption-config.yaml"
+for servername in controller-0 controller-1 controller-2; do
+  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id')
+  target_ip=$(api_call $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == 4) | .addr')
+  scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
 ```
 
