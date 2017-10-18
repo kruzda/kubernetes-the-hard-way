@@ -19,7 +19,7 @@ Set the following environment variables as per your Rackspace Cloud account user
 ```
 RS_USER=""
 RS_APIKEY=""
-RS_REGION="" (the API refers to these in all capitals. current regions are: LON, DFW, IAD, ORD, HKG and SYD)
+RS_REGION="" # the API refers to the region in all capitals. current regions available are: LON, DFW, IAD, ORD, HKG and SYD)
 ```
 
 Once that is done you can run the one-liner below to receive an authentication token and a service catalog from wich the endpoints used in this guide are saved as variables.
