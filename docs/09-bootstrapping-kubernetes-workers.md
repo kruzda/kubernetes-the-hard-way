@@ -4,7 +4,7 @@ In this lab you will bootstrap three Kubernetes worker nodes. The following comp
 
 ## Prerequisites
 
-The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. The following command can be used to login to the server specified in the `servername` environment variable:
+The commands in this lab must be run on each controller instance: `worker-0`, `worker-1`, and `worker-2`. The following command can be used to login to the server specified in the `servername` environment variable:
 
 ```
 servername="worker-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
@@ -54,11 +54,7 @@ tar -xvf cri-containerd-1.0.0-alpha.0.tar.gz -C /
 ```
 
 ```
-chmod -v +x kubectl kube-proxy kubelet
-```
-
-```
-mv -v kubectl kube-proxy kubelet /usr/local/bin/
+install -v -m 700 kubectl kube-proxy kubelet /usr/local/bin/
 ```
 
 ### Configure CNI Networking
