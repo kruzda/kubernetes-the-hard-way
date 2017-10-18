@@ -2,7 +2,7 @@
 
 ## A Rackspace Public Cloud account
 
-This tutorial leverages the [Rackspace Public Cloud](https://www.rackspace.com/openstack/public) to streamline provisioning of the compute infrastructure required to bootstrap a Kubernetes cluster from the ground up. Sign up: [for a UK account](https://cart.rackspace.com/en-gb/cloud) or a [global one](https://cart.rackspace.com/cloud).
+This tutorial leverages the [Rackspace Public Cloud](https://www.rackspace.com/openstack/public) to streamline provisioning of the compute infrastructure required to bootstrap a Kubernetes cluster from the ground up. Sign up for a [UK account](https://cart.rackspace.com/en-gb/cloud) or a [global one](https://cart.rackspace.com/cloud).
 
 ## A Linux, Mac or Cygwin terminal
 
@@ -19,7 +19,7 @@ Set the following environment variables as per your Rackspace Cloud account user
 ```
 RS_USER=""
 RS_APIKEY=""
-RS_REGION=""
+RS_REGION="" (the API refers to these in all capitals. current regions are: LON, DFW, IAD, ORD, HKG and SYD)
 ```
 
 Once that is done you can run the one-liner below to receive an authentication token and a service catalog from wich the endpoints used in this guide are saved as variables.
