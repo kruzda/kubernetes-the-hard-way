@@ -51,7 +51,6 @@ mv -v ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem encryption-config.yaml
 The instance internal IP address will be used advertise the API Server to members of the cluster. Retrieve the internal IP address for the current compute instance:
 
 ```
-apt install -y jq
 INTERNAL_IP=$(for n in $(xenstore-list vm-data/networking); do xenstore-read vm-data/networking/$n; done | jq -r '. | select(.label == "kubernetes-the-hard-way") | .ips[] | .ip')
 ```
 
