@@ -35,11 +35,7 @@ wget -q --show-progress --https-only --timestamping \
 Install the Kubernetes binaries:
 
 ```
-chmod -v +x kube-apiserver kube-controller-manager kube-scheduler kubectl
-```
-
-```
-mv -v kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin/
+install -v -m 700 kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin
 ```
 
 ### Configure the Kubernetes API Server
