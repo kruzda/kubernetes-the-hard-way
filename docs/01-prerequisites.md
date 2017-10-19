@@ -31,7 +31,7 @@ rs_auth=$(curl -s https://identity.api.rackspacecloud.com/v2.0/tokens -d '{"auth
 Set the following alias. This helps reducing the lenght of commands used in this guide making them easier to read.
 
 ```
-alias api_call='curl -s -H "X-Auth-Token: '$token'" -H "Content-Type: application/json"'
+alias api_call='curl -s -H "X-Auth-Token: '$rs_auth_token'" -H "Content-Type: application/json"'
 ```
 
 Next: [Installing the Client Tools](02-client-tools.md)
