@@ -6,8 +6,11 @@ In this lab you will bootstrap three Kubernetes worker nodes. The following comp
 
 The commands in this lab must be run on each controller instance: `worker-0`, `worker-1`, and `worker-2`. The following command can be used to login to the server specified in the `servername` environment variable:
 
+> Note: you must set the private_key_file environment variable to the private member of the keypair specified when creating the compute servers
+
 ```
-servername="worker-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
+private_key_file="$HOME/kubernetes-the-hard-way.pem"
+servername="worker-0"; user="root"; netname="public"; ipv=4; target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == '$ipv') | .addr') && ssh -i $private_key_file -o StrictHostKeyChecking=no $user@$target_ip
 ```
 
 ## Provisioning a Kubernetes Worker Node
@@ -203,7 +206,7 @@ systemctl enable --now containerd cri-containerd kubelet kube-proxy
 Login to one of the controller nodes:
 
 ```
-servername="controller-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
+servername="controller-0"; user="root"; netname="public"; ipv=4; target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == '$ipv') | .addr') && ssh -i $private_key_file -o StrictHostKeyChecking=no $user@$target_ip
 ```
 
 List the registered Kubernetes nodes:

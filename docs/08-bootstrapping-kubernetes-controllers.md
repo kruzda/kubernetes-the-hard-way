@@ -6,19 +6,14 @@ In this lab you will bootstrap the Kubernetes control plane across three compute
 
 The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. The following command can be used to login to the server specified in the `servername` environment variable:
 
+> Note: you must set the private_key_file environment variable to the private member of the keypair specified when creating the compute servers
+
 ```
-servername="controller-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
+private_key_file="$HOME/kubernetes-the-hard-way.pem"
+servername="controller-0"; user="root"; netname="public"; ipv=4; target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == '$ipv') | .addr') && ssh -i $private_key_file -o StrictHostKeyChecking=no $user@$target_ip
 ```
 
 ## Provision the Kubernetes Control Plane
-
-### Add static IPs for the worker nodes:
-
-```
-for i in 0 1 2; do
-  echo "10.240.0.2$i     worker-$i" >>/etc/hosts
-done
-```
 
 ### Download and Install the Kubernetes Controller Binaries
 
@@ -193,8 +188,10 @@ In this section you will configure RBAC permissions to allow the Kubernetes API 
 
 > This tutorial sets the Kubelet `--authorization-mode` flag to `Webhook`. Webhook mode uses the [SubjectAccessReview](https://kubernetes.io/docs/admin/authorization/#checking-api-access) API to determine authorization.
 
+> Note: this step will have to be run on a controller node. The following command can be used to login to the server specified in the `servername` environment variable:
+
 ```
-servername="controller-0"; netname="public"; ipv=4; server_id=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id'); target_ip=$(curl -s -H "X-Auth-Token: $token" $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == '$ipv') | .addr'); ssh -i $private_key_file -o StrictHostKeyChecking=no root@$target_ip
+servername="controller-0"; user="root"; netname="public"; ipv=4; target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == '$ipv') | .addr') && ssh -i $private_key_file -o StrictHostKeyChecking=no $user@$target_ip 
 ```
 
 Create the `system:kube-apiserver-to-kubelet` [ClusterRole](https://kubernetes.io/docs/admin/authorization/rbac/#role-and-clusterrole) with permissions to access the Kubelet API and perform most common tasks associated with managing pods:
@@ -253,14 +250,14 @@ In this section you attach the Kubernetes API Servers to the Cloud Load Balancer
 
 
 ```
+lb_name="kubernetes-api"
 netname="private"
-for n in 0 1 2; do
-  servername="controller-$n"
-  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id ')
-  server_ip=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == 4) | .addr')
+lb_id=$(api_call $lb_ep/loadbalancers | jq -r '.loadBalancers[] | select(.name == "'$lb_name'") | .id')
+for servername in controller-0 controller-1 controller-2; do
+  server_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == 4) | .addr')
   api_call $lb_ep/loadbalancers/$lb_id/nodes -X POST -d '{"nodes": [{"address": "'$server_ip'", "condition": "ENABLED", "port": "'$lbport'"}]}' | jq
   while [ $(api_call $lb_ep/loadbalancers/$lb_id | jq -r '.loadBalancer.status') != "ACTIVE" ] ; do
-	echo "waiting for CLB to become ACTIVE"
+	echo "...waiting for CLB to become ACTIVE..."
 	sleep 3
   done
 done

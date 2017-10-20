@@ -136,12 +136,8 @@ cat > ${instance}-csr.json <<EOF
 }
 EOF
 
-netname="public"
-server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$instance'") | .id ')
-EXTERNAL_IP=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == 4) | .addr')
-
-netname="kubernetes-the-hard-way"
-INTERNAL_IP=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == 4) | .addr')
+EXTERNAL_IP=$(api_call $cs_ep/servers/detail?name=$instance | jq -r '.servers[].addresses["public"][] | select(.version == 4) | .addr')
+INTERNAL_IP=$(api_call $cs_ep/servers/detail?name=$instance | jq -r '.servers[].addresses["kubernetes-the-hard-way"][] | select(.version == 4) | .addr')
 
 cfssl gencert \
   -ca=ca.pem \
@@ -266,14 +262,16 @@ kubernetes.pem
 
 Copy the appropriate certificates and private keys to each worker instance:
 
+> Note: you must set the private_key_file environment variable to the private member of the keypair specified when creating the compute servers
+
 ```
 user="root"
 target_path="~/"
 netname="public"
+private_key_file="$HOME/kubernetes-the-hard-way.pem"
 for servername in worker-0 worker-1 worker-2; do
-  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id')
-  target_ip=$(api_call $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == 4) | .addr')
   source="ca.pem ${servername}-key.pem ${servername}.pem"
+  target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == 4) | .addr')
   ssh-keygen -R $target_ip
   scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
@@ -284,8 +282,7 @@ Copy the appropriate certificates and private keys to each controller instance:
 ```
 source="ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem"
 for servername in controller-0 controller-1 controller-2; do
-  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id')
-  target_ip=$(api_call $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == 4) | .addr')
+  target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == 4) | .addr')
   ssh-keygen -R $target_ip
   scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done

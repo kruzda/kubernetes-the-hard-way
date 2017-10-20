@@ -93,10 +93,13 @@ kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 
 Copy the appropriate `kubelet` and `kube-proxy` kubeconfig files to each worker instance:
 
+> Note: you must set the private_key_file environment variable to the private member of the keypair specified when creating the compute servers
+
 ```
+private_key_file="$HOME/kubernetes-the-hard-way.pem"
+netname="public"
 for servername in worker-0 worker-1 worker-2; do
-  server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id')
-  target_ip=$(api_call $cs_ep/servers/$server_id/ips | jq -r '.addresses["'$netname'"][] | select(.version == 4) | .addr')
+  target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == 4) | .addr')
   source="${servername}.kubeconfig kube-proxy.kubeconfig"
   scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done

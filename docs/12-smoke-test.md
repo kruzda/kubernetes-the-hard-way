@@ -175,8 +175,7 @@ Retrieve the external IP address of a worker instance:
 servername="worker-0"
 netname="public"
 ipv="4"
-server_id=$(api_call $cs_ep/servers | jq -r '.servers[] | select(.name == "'$servername'") | .id ')
-EXTERNAL_IP=$(api_call $cs_ep/servers/$server_id | jq -r '.server.addresses["'$netname'"][] | select(.version == '$ipv') | .addr')
+EXTERNAL_IP=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == '$ipv') | .addr')
 ```
 
 Make an HTTP request using the external IP address and the `nginx` node port:

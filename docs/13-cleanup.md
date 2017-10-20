@@ -34,7 +34,7 @@ Delete the network named "kubernetes-the-hard-way":
 
 ```
 netname="kubernetes-the-hard-way"
-network_id=$(api_call $cn_ep/networks | jq  -r '.networks[] | select(.name == "'$netname'") | .id')
+network_id=$(api_call $cn_ep/networks?name=$netname | jq  -r '.networks[].id')
 api_call $cn_ep/networks/$network_id -X DELETE
 ```
 
