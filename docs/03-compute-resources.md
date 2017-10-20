@@ -189,4 +189,4 @@ api_call $cs_ep/servers/detail | jq '.servers[] | select(.metadata["group"] != n
 }
 ```
 
-Next: [Provisioning a CA and Generating TLS Certificates](05-certificate-authority.md)
+Next: [Provisioning a CA and Generating TLS Certificates](04-certificate-authority.md)
