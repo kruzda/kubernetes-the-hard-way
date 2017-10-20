@@ -1,8 +1,6 @@
 # Provisioning Compute Resources
 
-Kubernetes requires a set of machines to host the Kubernetes control plane and the worker nodes where containers are ultimately run. In this lab you will provision the compute resources required for running a secure and highly available Kubernetes cluster across a single [compute zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones).
-
-> Ensure a default compute zone and region have been set as described in the [Prerequisites](01-prerequisites.md#set-a-default-compute-region-and-zone) lab.
+Kubernetes requires a set of machines to host the Kubernetes control plane and the worker nodes where containers are ultimately run. In this lab you will provision the compute resources required for running a secure and highly available Kubernetes cluster across a single region.
 
 ## Networking
 
@@ -10,107 +8,111 @@ The Kubernetes [networking model](https://kubernetes.io/docs/concepts/cluster-ad
 
 > Setting up network policies is out of scope for this tutorial.
 
-### Virtual Private Cloud Network
+### Cloud Network
 
-In this section a dedicated [Virtual Private Cloud](https://cloud.google.com/compute/docs/networks-and-firewalls#networks) (VPC) network will be setup to host the Kubernetes cluster.
+In this section a dedicated [Cloud Network](https://developer.rackspace.com/docs/cloud-networks/v2/) will be setup for the Kubernetes cluster communicate through.
 
-Create the `kubernetes-the-hard-way` custom VPC network:
-
-```
-gcloud compute networks create kubernetes-the-hard-way --mode custom
-```
-
-A [subnet](https://cloud.google.com/compute/docs/vpc/#vpc_networks_and_subnets) must be provisioned with an IP address range large enough to assign a private IP address to each node in the Kubernetes cluster.
-
-Create the `kubernetes` subnet in the `kubernetes-the-hard-way` VPC network:
+Create the `kubernetes-the-hard-way` Cloud Network:
 
 ```
-gcloud compute networks subnets create kubernetes \
-  --network kubernetes-the-hard-way \
-  --range 10.240.0.0/24
+netname="kubernetes-the-hard-way"
+network_id=$(api_call $cn_ep/networks -X POST -d '{"network": {"name": "'$netname'"}}' | jq -r '.network.id')
+```
+
+A [subnet](https://developer.rackspace.com/docs/cloud-networks/v2/getting-started/concepts/#subnet-concepts) must be provisioned with an IP address range large enough to assign a private IP address to each node in the Kubernetes cluster.
+
+Create the `kubernetes` subnet associated with the `kubernetes-the-hard-way` Cloud Network:
+
+```
+subnetname="kubernetes"
+cidr="10.240.0.0/24"
+subnet_id=$(api_call $cn_ep/subnets -X POST -d '{"subnet": {"name": "'$subnetname'", "network_id": "'$network_id'", "ip_version": "4", "cidr": "'$cidr'", "host_routes": [{"destination": "10.200.0.0/24", "nexthop": "10.240.0.20"}, {"destination": "10.200.1.0/24", "nexthop": "10.240.0.21"}, {"destination": "10.200.2.0/24", "nexthop": "10.240.0.22"}]}}' | jq -r .subnet.id)
 ```
 
 > The `10.240.0.0/24` IP address range can host up to 254 compute instances.
 
-### Firewall Rules
-
-Create a firewall rule that allows internal communication across all protocols:
+Create [Cloud Network Ports](https://developer.rackspace.com/docs/cloud-networks/v2/getting-started/concepts/#port-concepts) for the controller nodes:
 
 ```
-gcloud compute firewall-rules create kubernetes-the-hard-way-allow-internal \
-  --allow tcp,udp,icmp \
-  --network kubernetes-the-hard-way \
-  --source-ranges 10.240.0.0/24,10.200.0.0/16
+for i in 0 1 2; do
+  limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+  while [ $(echo $limit | jq -r '.remaining') -lt 1 ]; do
+    delay=$(($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s) + 1))
+    echo "Rate limited! Next API call may be sent in $delay seconds"
+    sleep $delay
+    limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+  done
+  api_call $cn_ep/ports -X POST -d '{"port": {"name": "controller-'$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.1'$i'"}]}}' | jq
+done
 ```
 
-Create a firewall rule that allows external SSH, ICMP, and HTTPS:
+Create the network ports for the worker nodes:
 
 ```
-gcloud compute firewall-rules create kubernetes-the-hard-way-allow-external \
-  --allow tcp:22,tcp:6443,icmp \
-  --network kubernetes-the-hard-way \
-  --source-ranges 0.0.0.0/0
-```
-
-> An [external load balancer](https://cloud.google.com/compute/docs/load-balancing/network/) will be used to expose the Kubernetes API Servers to remote clients.
-
-List the firewall rules in the `kubernetes-the-hard-way` VPC network:
-
-```
-gcloud compute firewall-rules list --filter "network: kubernetes-the-hard-way"
-```
-
-> output
-
-```
-NAME                                         NETWORK                  DIRECTION  PRIORITY  ALLOW                 DENY
-kubernetes-the-hard-way-allow-external       kubernetes-the-hard-way  INGRESS    1000      tcp:22,tcp:6443,icmp
-kubernetes-the-hard-way-allow-internal       kubernetes-the-hard-way  INGRESS    1000      tcp,udp,icmp
+for i in 0 1 2; do
+  limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+  while [ $(echo $limit | jq -r '.remaining') -lt 1 ]; do
+    delay=$(($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s) + 1))
+    echo "Rate limited! Next API call may be sent in $delay seconds"
+    sleep $delay
+    limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+  done
+  api_call $cn_ep/ports -X POST -d '{"port": {"name": "worker-'$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.2'$i'"}]}}' | jq
+done
 ```
 
 ### Kubernetes Public IP Address
 
-Allocate a static IP address that will be attached to the external load balancer fronting the Kubernetes API Servers:
+> A [Cloud Load Balancer](https://developer.rackspace.com/docs/cloud-load-balancers/v1/) will be used to expose the Kubernetes API Servers to remote clients.
+
+Allocate the load balancer fronting the Kubernetes API Servers:
 
 ```
-gcloud compute addresses create kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region)
-```
-
-Verify the `kubernetes-the-hard-way` static IP address was created in your default compute region:
-
-```
-gcloud compute addresses list --filter="name=('kubernetes-the-hard-way')"
-```
-
-> output
-
-```
-NAME                     REGION    ADDRESS        STATUS
-kubernetes-the-hard-way  us-west1  XX.XXX.XXX.XX  RESERVED
+lbport="6443"
+lbname="kubernetes-api"
+lb_details=$(api_call $lb_ep/loadbalancers -X POST -d '{"loadBalancer": {"name": "'$lbname'", "port": '$lbport', "protocol": "HTTPS", "virtualIps": [{"type": "PUBLIC"}], "healthMonitor": {"type": "HTTPS", "delay": 10, "timeout": 5, "attemptsBeforeDeactivation": 2, "path": "/version", "statusRegex": "^200$"}}}')
+lb_id=$(echo $lb_details | jq -r '.loadBalancer.id')
 ```
 
 ## Compute Instances
 
 The compute instances in this lab will be provisioned using [Ubuntu Server](https://www.ubuntu.com/server) 16.04, which has good support for the [cri-containerd container runtime](https://github.com/kubernetes-incubator/cri-containerd). Each compute instance will be provisioned with a fixed private IP address to simplify the Kubernetes bootstrapping process.
 
+### Setting up an SSH key to log in with
+
+Create a new SSH keypair to be used (a) or upload the public key (b) that you wish to deploy on the servers:
+
+a)
+```
+keypair_name="kubernetes-the-hard-way"
+api_call $cs_ep/os-keypairs -X POST -d '{"keypair": {"name": "'$keypair_name'"}}' | jq -r '.keypair.private_key' | tee $HOME/$keypair_name.pem
+chmod 600 $keypair_name.pem
+private_key_file="$HOME/$keypair_name.pem"
+```
+
+b)
+```
+public_key_file="$HOME/.ssh/id_rsa.pub"
+private_key_file="$HOME/.ssh/id_rsa"
+keypair_name="kubernetes-the-hard-way"
+echo '{"keypair": {"name": "'$keypair_name'", "public_key": "'$(cat $public_key_file)'"}}' >/tmp/pubkey-to-upload
+api_call $cs_ep/os-keypairs -X POST -d @/tmp/pubkey-to-upload | jq
+```
+
+
 ### Kubernetes Controllers
 
 Create three compute instances which will host the Kubernetes control plane:
 
 ```
+controller_flavor="general1-2"
+compute_image="0401bbaf-ea2c-4863-b6fc-001b48f3cb3c"
+pubnetuuid="00000000-0000-0000-0000-000000000000"
+sernetuuid="11111111-1111-1111-1111-111111111111"
 for i in 0 1 2; do
-  gcloud compute instances create controller-${i} \
-    --async \
-    --boot-disk-size 200GB \
-    --can-ip-forward \
-    --image-family ubuntu-1604-lts \
-    --image-project ubuntu-os-cloud \
-    --machine-type n1-standard-1 \
-    --private-network-ip 10.240.0.1${i} \
-    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
-    --subnet kubernetes \
-    --tags kubernetes-the-hard-way,controller
+  servername="controller-$i"
+  port_id=$(api_call $cn_ep/ports?name=$servername | jq -r '.ports[].id')
+  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$controller_flavor'", "key_name": "'$keypair_name'", "metadata": {"group": "kubernetes-the-hard-way"}, "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}], "config_drive": true, "user_data": "I2Nsb3VkLWNvbmZpZwoKcGFja2FnZXM6CiAtIGpxCg=="}}' | jq
 done
 ```
 
@@ -120,43 +122,71 @@ Each worker instance requires a pod subnet allocation from the Kubernetes cluste
 
 > The Kubernetes cluster CIDR range is defined by the Controller Manager's `--cluster-cidr` flag. In this tutorial the cluster CIDR range will be set to `10.200.0.0/16`, which supports 254 subnets.
 
+
 Create three compute instances which will host the Kubernetes worker nodes:
 
 ```
+worker_flavor="general1-2"
 for i in 0 1 2; do
-  gcloud compute instances create worker-${i} \
-    --async \
-    --boot-disk-size 200GB \
-    --can-ip-forward \
-    --image-family ubuntu-1604-lts \
-    --image-project ubuntu-os-cloud \
-    --machine-type n1-standard-1 \
-    --metadata pod-cidr=10.200.${i}.0/24 \
-    --private-network-ip 10.240.0.2${i} \
-    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
-    --subnet kubernetes \
-    --tags kubernetes-the-hard-way,worker
+  servername="worker-$i"
+  port_id=$(api_call $cn_ep/ports?name=$servername | jq -r '.ports[].id')
+  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$worker_flavor'", "key_name": "'$keypair_name'", "metadata": {"pod-cidr": "10.200.'$i'.0/24", "group": "kubernetes-the-hard-way"}, "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}], "config_drive": true, "user_data": "I2Nsb3VkLWNvbmZpZwoKcGFja2FnZXM6CiAtIGpxCg=="}}' | jq
 done
 ```
 
 ### Verification
 
-List the compute instances in your default compute zone:
+List the Cloud Servers:
 
 ```
-gcloud compute instances list
+api_call $cs_ep/servers/detail | jq '.servers[] | select(.metadata["group"] != null) | select(.metadata.group == "kubernetes-the-hard-way") | {name: .name, status: .status, task_status: .["OS-EXT-STS:task_state"], progress: .progress, internal_ip: .addresses["kubernetes-the-hard-way"][] | .addr}'
 ```
 
 > output
 
 ```
-NAME          ZONE        MACHINE_TYPE   PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP     STATUS
-controller-0  us-west1-c  n1-standard-1               10.240.0.10  XX.XXX.XXX.XXX  RUNNING
-controller-1  us-west1-c  n1-standard-1               10.240.0.11  XX.XXX.X.XX     RUNNING
-controller-2  us-west1-c  n1-standard-1               10.240.0.12  XX.XXX.XXX.XX   RUNNING
-worker-0      us-west1-c  n1-standard-1               10.240.0.20  XXX.XXX.XXX.XX  RUNNING
-worker-1      us-west1-c  n1-standard-1               10.240.0.21  XX.XXX.XX.XXX   RUNNING
-worker-2      us-west1-c  n1-standard-1               10.240.0.22  XXX.XXX.XX.XX   RUNNING
+{
+  "name": "worker-2",
+  "status": "ACTIVE",
+  "task_state": null,
+  "progress": 100,
+  "internal_ip": "10.240.0.22"
+}
+{
+  "name": "worker-1",
+  "status": "ACTIVE",
+  "task_state": null,
+  "progress": 100,
+  "internal_ip": "10.240.0.21"
+}
+{
+  "name": "worker-0",
+  "status": "ACTIVE",
+  "task_state": null,
+  "progress": 100,
+  "internal_ip": "10.240.0.20"
+}
+{
+  "name": "controller-2",
+  "status": "ACTIVE",
+  "task_state": null,
+  "progress": 100,
+  "internal_ip": "10.240.0.12"
+}
+{
+  "name": "controller-1",
+  "status": "ACTIVE",
+  "task_state": null,
+  "progress": 100,
+  "internal_ip": "10.240.0.11"
+}
+{
+  "name": "controller-0",
+  "status": "ACTIVE",
+  "task_state": null,
+  "progress": 100,
+  "internal_ip": "10.240.0.10"
+}
 ```
 
 Next: [Provisioning a CA and Generating TLS Certificates](04-certificate-authority.md)

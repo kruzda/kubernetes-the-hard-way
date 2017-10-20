@@ -121,26 +121,23 @@ cat > ${instance}-csr.json <<EOF
 {
   "CN": "system:node:${instance}",
   "key": {
-    "algo": "rsa",
-    "size": 2048
+	"algo": "rsa",
+	"size": 2048
   },
   "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "system:nodes",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
+	{
+	  "C": "US",
+	  "L": "Portland",
+	  "O": "system:nodes",
+	  "OU": "Kubernetes The Hard Way",
+	  "ST": "Oregon"
+	}
   ]
 }
 EOF
 
-EXTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].accessConfigs[0].natIP)')
-
-INTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].networkIP)')
+EXTERNAL_IP=$(api_call $cs_ep/servers/detail?name=$instance | jq -r '.servers[].addresses["public"][] | select(.version == 4) | .addr')
+INTERNAL_IP=$(api_call $cs_ep/servers/detail?name=$instance | jq -r '.servers[].addresses["kubernetes-the-hard-way"][] | select(.version == 4) | .addr')
 
 cfssl gencert \
   -ca=ca.pem \
@@ -208,14 +205,15 @@ kube-proxy.pem
 
 ### The Kubernetes API Server Certificate
 
-The `kubernetes-the-hard-way` static IP address will be included in the list of subject alternative names for the Kubernetes API Server certificate. This will ensure the certificate can be validated by remote clients.
+The public IP of the `kubernetes-api` load balancer will be included in the list of subject alternative names for the Kubernetes API Server certificate. This will ensure the certificate can be validated by remote clients.
 
-Retrieve the `kubernetes-the-hard-way` static IP address:
+Retrieve the public IP address of the `kubernetes-api` load balancer:
 
 ```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+lbname="kubernetes-api"
+ipv="4"
+iptype="PUBLIC"
+KUBERNETES_PUBLIC_ADDRESS=$(api_call $lb_ep/loadbalancers | jq -r '.loadBalancers[] | select(.name == "'$lbname'") | .virtualIps[] | select(.ipVersion == "IPV'$ipv'" and .type == "'$iptype'") | .address')
 ```
 
 Create the Kubernetes API Server certificate signing request:
@@ -264,17 +262,29 @@ kubernetes.pem
 
 Copy the appropriate certificates and private keys to each worker instance:
 
+> Note: you must set the private_key_file environment variable to the private member of the keypair specified when creating the compute servers
+
 ```
-for instance in worker-0 worker-1 worker-2; do
-  gcloud compute scp ca.pem ${instance}-key.pem ${instance}.pem ${instance}:~/
+user="root"
+target_path="~/"
+netname="public"
+private_key_file="$HOME/kubernetes-the-hard-way.pem"
+for servername in worker-0 worker-1 worker-2; do
+  source="ca.pem ${servername}-key.pem ${servername}.pem"
+  target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == 4) | .addr')
+  ssh-keygen -R $target_ip
+  scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
 ```
 
 Copy the appropriate certificates and private keys to each controller instance:
 
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem ${instance}:~/
+source="ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem"
+for servername in controller-0 controller-1 controller-2; do
+  target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == 4) | .addr')
+  ssh-keygen -R $target_ip
+  scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
 ```
 

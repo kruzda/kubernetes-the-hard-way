@@ -34,9 +34,15 @@ EOF
 
 Copy the `encryption-config.yaml` encryption config file to each controller instance:
 
+> Note: you must set the private_key_file environment variable to the private member of the keypair specified when creating the compute servers
+
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp encryption-config.yaml ${instance}:~/
+private_key_file="$HOME/kubernetes-the-hard-way.pem"
+netname="public"
+source="encryption-config.yaml"
+for servername in controller-0 controller-1 controller-2; do
+  target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == 4) | .addr')
+  scp -i $private_key_file -o StrictHostKeyChecking=no $source $user@$target_ip:$target_path
 done
 ```
 

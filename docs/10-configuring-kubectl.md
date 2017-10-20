@@ -11,9 +11,10 @@ Each kubeconfig requires a Kubernetes API Server to connect to. To support high 
 Retrieve the `kubernetes-the-hard-way` static IP address:
 
 ```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+lb_name="kubernetes-api"
+ipv=4
+iptype="PUBLIC"
+KUBERNETES_PUBLIC_ADDRESS=$(api_call $lb_ep/loadbalancers | jq -r '.loadBalancers[] | select(.name == "'$lbname'") | .virtualIps[] | select(.ipVersion == "IPV'$ipv'" and .type == "'$iptype'") | .address')
 ```
 
 Generate a kubeconfig file suitable for authenticating as the `admin` user:
@@ -75,4 +76,4 @@ worker-1   Ready     <none>    2m        v1.8.0
 worker-2   Ready     <none>    2m        v1.8.0
 ```
 
-Next: [Provisioning Pod Network Routes](11-pod-network-routes.md)
+Next: [Deploying the DNS Cluster Add-on](11-dns-addon.md)

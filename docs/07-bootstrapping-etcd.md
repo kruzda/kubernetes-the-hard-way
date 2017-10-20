@@ -4,10 +4,13 @@ Kubernetes components are stateless and store cluster state in [etcd](https://gi
 
 ## Prerequisites
 
-The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `gcloud` command. Example:
+The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. The following command can be used to login to the server specified in the `servername` environment variable:
+
+> Note: you must set the private_key_file environment variable to the private member of the keypair specified when creating the compute servers
 
 ```
-gcloud compute ssh controller-0
+private_key_file="$HOME/kubernetes-the-hard-way.pem"
+servername="controller-0"; user="root"; netname="public"; ipv=4; target_ip=$(api_call $cs_ep/servers/detail?name=$servername | jq -r '.servers[].addresses["'$netname'"][] | select(.version == '$ipv') | .addr') && ssh -i $private_key_file -o StrictHostKeyChecking=no $user@$target_ip
 ```
 
 ## Bootstrapping an etcd Cluster Member
@@ -28,24 +31,23 @@ tar -xvf etcd-v3.2.8-linux-amd64.tar.gz
 ```
 
 ```
-sudo mv etcd-v3.2.8-linux-amd64/etcd* /usr/local/bin/
+mv -v etcd-v3.2.8-linux-amd64/etcd* /usr/local/bin/
 ```
 
 ### Configure the etcd Server
 
 ```
-sudo mkdir -p /etc/etcd /var/lib/etcd
+mkdir -pv /etc/etcd /var/lib/etcd
 ```
 
 ```
-sudo cp ca.pem kubernetes-key.pem kubernetes.pem /etc/etcd/
+cp -v ca.pem kubernetes-key.pem kubernetes.pem /etc/etcd/
 ```
 
 The instance internal IP address will be used to serve client requests and communicate with etcd cluster peers. Retrieve the internal IP address for the current compute instance:
 
 ```
-INTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+INTERNAL_IP=$(for n in $(xenstore-list vm-data/networking); do xenstore-read vm-data/networking/$n; done | jq -r '. | select(.label == "kubernetes-the-hard-way") | .ips[] | .ip')
 ```
 
 Each etcd member must have a unique name within an etcd cluster. Set the etcd name to match the hostname of the current compute instance:
@@ -57,7 +59,7 @@ ETCD_NAME=$(hostname -s)
 Create the `etcd.service` systemd unit file:
 
 ```
-cat > etcd.service <<EOF
+cat > /etc/systemd/system/etcd.service <<EOF
 [Unit]
 Description=etcd
 Documentation=https://github.com/coreos
@@ -92,19 +94,11 @@ EOF
 ### Start the etcd Server
 
 ```
-sudo mv etcd.service /etc/systemd/system/
+systemctl daemon-reload
 ```
 
 ```
-sudo systemctl daemon-reload
-```
-
-```
-sudo systemctl enable etcd
-```
-
-```
-sudo systemctl start etcd
+systemctl enable --now etcd
 ```
 
 > Remember to run the above commands on each controller node: `controller-0`, `controller-1`, and `controller-2`.
