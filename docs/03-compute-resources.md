@@ -78,7 +78,7 @@ lb_id=$(echo $lb_details | jq -r '.loadBalancer.id')
 
 The compute instances in this lab will be provisioned using [Ubuntu Server](https://www.ubuntu.com/server) 16.04, which has good support for the [cri-containerd container runtime](https://github.com/kubernetes-incubator/cri-containerd). Each compute instance will be provisioned with a fixed private IP address to simplify the Kubernetes bootstrapping process.
 
-### Kubernetes Controllers
+### Setting up an SSH key to log in with
 
 Create a new SSH keypair to be used (a) or upload the public key (b) that you wish to deploy on the servers:
 
@@ -98,6 +98,9 @@ keypair_name="kubernetes-the-hard-way"
 echo '{"keypair": {"name": "'$keypair_name'", "public_key": "'$(cat $public_key_file)'"}}' >/tmp/pubkey-to-upload
 api_call $cs_ep/os-keypairs -X POST -d @/tmp/pubkey-to-upload | jq
 ```
+
+
+### Kubernetes Controllers
 
 Create three compute instances which will host the Kubernetes control plane:
 
