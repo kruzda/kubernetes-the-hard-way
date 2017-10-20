@@ -16,8 +16,8 @@ for sid in $(api_call $cs_ep/servers/detail | jq -r '.servers[] | select(.metada
 Delete the keypair:
 
 ```
+keypair_name="kubernetes-the-hard-way"
 api_call $cs_ep/os-keypairs/$keypair_name -X DELETE
-rm -v $HOME/$keypair
 ```
 
 ## Networking
