@@ -31,29 +31,33 @@ subnet_id=$(api_call $cn_ep/subnets -X POST -d '{"subnet": {"name": "'$subnetnam
 
 > The `10.240.0.0/24` IP address range can host up to 254 compute instances.
 
-Create [Cloud Network Ports](https://developer.rackspace.com/docs/cloud-networks/v2/getting-started/concepts/#port-concepts) with fixed IPs for the compute nodes:
+Create [Cloud Network Ports](https://developer.rackspace.com/docs/cloud-networks/v2/getting-started/concepts/#port-concepts) for the controller nodes:
 
 ```
 for i in 0 1 2; do
-limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+  limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
   while [ $(echo $limit | jq -r '.remaining') -lt 1 ]; do
-    delay=$($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s))
-    echo "Rate limited! Next API call can be made in $delay seconds"
+    delay=$(($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s) + 1))
+    echo "Rate limited! Next API call may be sent in $delay seconds"
     sleep $delay
+    limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
   done
-  api_call $cn_ep/ports -X POST -d '{"port": {"name": "'controller-$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.1'$i'"}]}}' | jq
+  api_call $cn_ep/ports -X POST -d '{"port": {"name": "controller-'$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.1'$i'"}]}}' | jq
 done
 ```
 
+Create the network ports for the worker nodes:
+
 ```
 for i in 0 1 2; do
-limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+  limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
   while [ $(echo $limit | jq -r '.remaining') -lt 1 ]; do
-    delay=$($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s))
-    echo "Rate limited! Next API call can be made in $delay seconds"
+    delay=$(($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s) + 1))
+    echo "Rate limited! Next API call may be sent in $delay seconds"
     sleep $delay
+    limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
   done
-  api_call $cn_ep/ports -X POST -d '{"port": {"name": "'worker-$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.2'$i'"}]}}' | jq
+  api_call $cn_ep/ports -X POST -d '{"port": {"name": "worker-'$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.2'$i'"}]}}' | jq
 done
 ```
 
@@ -104,8 +108,8 @@ pubnetuuid="00000000-0000-0000-0000-000000000000"
 sernetuuid="11111111-1111-1111-1111-111111111111"
 for i in 0 1 2; do
   servername="controller-$i"
-  port_id=$(api_call $cn_ep/ports | jq -r '.ports[] | select(.fixed_ips[].ip_address == "10.240.0.1'$i'") | .id')
-  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$controller_flavor'", "key_name": "'$keypair_name'", "metadata": {"group": "kubernetes-the-hard-way"}, "config_drive": true, "user_data": "IyEvYmluL2Jhc2gKCmFwdCBpbnN0YWxsIGpxIC15Cg==", ""networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}]}}' | jq
+  port_id=$(api_call $cn_ep/ports?name=$servername | jq -r '.ports[].id')
+  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$controller_flavor'", "key_name": "'$keypair_name'", "metadata": {"group": "kubernetes-the-hard-way"}, "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}], "config_drive": true, "user_data": "I2Nsb3VkLWNvbmZpZwoKcGFja2FnZXM6CiAtIGpxCg=="}}' | jq
 done
 ```
 
@@ -122,8 +126,8 @@ Create three compute instances which will host the Kubernetes worker nodes:
 worker_flavor="general1-2"
 for i in 0 1 2; do
   servername="worker-$i"
-  port_id=$(api_call $cn_ep/ports | jq -r '.ports[] | select(.fixed_ips[].ip_address == "10.240.0.2'$i'") | .id')
-  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$worker_flavor'", "key_name": "'$keypair_name'", "metadata": {"group": "kubernetes-the-hard-way", "pod-cidr": "10.200.'$i'.0/24"}, "config_drive": true, "user_data": "IyEvYmluL2Jhc2gKCmFwdCBpbnN0YWxsIGpxIC15Cg==", "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}]}}' | jq
+  port_id=$(api_call $cn_ep/ports?name=$servername | jq -r '.ports[].id')
+  api_call $cs_ep/servers -X POST -d '{"server": {"name": "'$servername'", "imageRef": "'$compute_image'", "flavorRef": "'$worker_flavor'", "key_name": "'$keypair_name'", "metadata": {"pod-cidr": "10.200.'$i'.0/24", "group": "kubernetes-the-hard-way"}, "networks": [{"uuid": "'$pubnetuuid'"}, {"uuid": "'$sernetuuid'"}, {"port": "'$port_id'"}], "config_drive": true, "user_data": "I2Nsb3VkLWNvbmZpZwoKcGFja2FnZXM6CiAtIGpxCg=="}}' | jq
 done
 ```
 
@@ -132,9 +136,7 @@ done
 List the Cloud Servers:
 
 ```
-for s in $(api_call $cs_ep/servers | jq -r '.servers[] | .id'); do
-  api_call $cs_ep/servers/$s | jq '.server | {name: .name, status: .status, task_state: .["OS-EXT-STS:task_state"], progress: .progress, internal_ip: .addresses["kubernetes-the-hard-way"][] | .addr}'
-done
+api_call $cs_ep/servers/detail | jq '.servers[] | select(.metadata["group"] != null) | select(.metadata.group == "kubernetes-the-hard-way") | {name: .name, status: .status, task_status: .["OS-EXT-STS:task_state"], progress: .progress, internal_ip: .addresses["kubernetes-the-hard-way"][] | .addr}'
 ```
 
 > output
@@ -184,4 +186,4 @@ done
 }
 ```
 
-Next: [Provisioning a CA and Generating TLS Certificates](04-certificate-authority.md)
+Next: [Provisioning a CA and Generating TLS Certificates](05-certificate-authority.md)
