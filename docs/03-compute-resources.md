@@ -110,7 +110,7 @@ Create three compute instances which will host the Kubernetes control plane:
 
 ```
 controller_flavor="general1-2"
-compute_image="0401bbaf-ea2c-4863-b6fc-001b48f3cb3c"
+compute_image=$(api_call $ci_ep/images | jq -r '.images[] | select(.["org.openstack__1__os_version"] == "14.04" and .vm_mode == "hvm") | .id')
 pubnetuuid="00000000-0000-0000-0000-000000000000"
 sernetuuid="11111111-1111-1111-1111-111111111111"
 for i in 0 1 2; do
