@@ -90,7 +90,7 @@ a)
 ```
 keypair_name="kubernetes-the-hard-way"
 api_call $cs_ep/os-keypairs -X POST -d '{"keypair": {"name": "'$keypair_name'"}}' | jq -r '.keypair.private_key' | tee $HOME/$keypair_name.pem
-chmod 600 $keypair_name.pem
+chmod 600 $HOME/$keypair_name.pem
 private_key_file="$HOME/$keypair_name.pem"
 ```
 
