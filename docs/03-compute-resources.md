@@ -37,10 +37,12 @@ Create [Cloud Network Ports](https://developer.rackspace.com/docs/cloud-networks
 for i in 0 1 2; do
   limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
   while [ $(echo $limit | jq -r '.remaining') -lt 1 ]; do
-    delay=$(($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s) + 1))
-    echo "Rate limited! Next API call may be sent in $delay seconds"
+    lds=$(echo "$(echo $limit | jq -r '.["next-available"]' | cut -d'.' -f 1)Z")
+    delay=$(($(date -j -f "%Y-%m-%dT%H:%M:%SZ" $lds +%s 2>/dev/null || date -d $lds +%s 2>/dev/null) - $(date +%s) + 1))
+    echo "Rate limited! Next API call may be sent in $delay seconds - sleeping"
     sleep $delay
     limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+    if [ $(echo $limit | jq -r '.remaining') -lt 1 ]; then echo "System clock is off - sleeping for an additional 5 seconds"; sleep 5; fi
   done
   api_call $cn_ep/ports -X POST -d '{"port": {"name": "controller-'$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.1'$i'"}]}}' | jq
 done
@@ -52,10 +54,12 @@ Create the network ports for the worker nodes:
 for i in 0 1 2; do
   limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
   while [ $(echo $limit | jq -r '.remaining') -lt 1 ]; do
-    delay=$(($(date -d $(echo $limit | jq -r '.["next-available"]') +%s) - $(date +%s) + 1))
-    echo "Rate limited! Next API call may be sent in $delay seconds"
+    lds=$(echo "$(echo $limit | jq -r '.["next-available"]' | cut -d'.' -f 1)Z")
+    delay=$(($(date -j -f "%Y-%m-%dT%H:%M:%SZ" $lds +%s 2>/dev/null || date -d $lds +%s 2>/dev/null) - $(date +%s) + 1))
+    echo "Rate limited! Next API call may be sent in $delay seconds - sleeping"
     sleep $delay
     limit=$(api_call $cn_ep/limits | jq '.limits.rate[] | select(.uri == "DefaultPortsPOST") | .limit[]')
+    if [ $(echo $limit | jq -r '.remaining') -lt 1 ]; then echo "System clock is off - sleeping for an additional 5 seconds"; sleep 5; fi
   done
   api_call $cn_ep/ports -X POST -d '{"port": {"name": "worker-'$i'", "network_id": "'$network_id'", "fixed_ips": [{"subnet_id": "'$subnet_id'", "ip_address": "10.240.0.2'$i'"}]}}' | jq
 done
