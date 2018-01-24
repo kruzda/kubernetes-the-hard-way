@@ -15,6 +15,11 @@ servername="controller-0"; user="root"; netname="public"; ipv=4; target_ip=$(api
 
 ## Provision the Kubernetes Control Plane
 
+### Define the IP Addresses of the Worker Nodes
+```
+for i in 0 1 2; do echo -e "10.240.0.2$i\tworker-$i"; done >>/etc/hosts
+```
+
 ### Download and Install the Kubernetes Controller Binaries
 
 Download the official Kubernetes release binaries:
